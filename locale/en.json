@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "title": "Delete Session",
+    "description": "Adds a red “Delete session” row to every Session's “...” menu; confirming removes the Session and its chat history from disk."
+  },
+  "menu.delete": "Delete session",
+  "dialog.title": "Delete this session?",
+  "dialog.description": "“{title}” will be permanently deleted. Its chat history is removed from disk and cannot be recovered.",
+  "dialog.untitled": "This session",
+  "dialog.cancel": "Cancel",
+  "dialog.confirm": "Delete",
+  "dialog.deleting": "Deleting…",
+  "dialog.close": "Close",
+  "error.inUse": "This session is in use. Switch to another session and try again.",
+  "error.running": "This session is running. Stop the current turn before deleting it.",
+  "error.active": "This session still has work in progress (a turn, subagents, background jobs, or scheduled reminders). Stop that work first.",
+  "error.unsupported": "Session deletion is unavailable here because session storage is not mounted.",
+  "error.failed": "Deletion failed. Please try again."
+}

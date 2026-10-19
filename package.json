@@ -1,0 +1,60 @@
+{
+  "name": "dsh-remove-session",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Adds a red “Delete session” action to every Session's “...” menu, with a confirmation dialog and a real on-disk delete. | 在会话「...」菜单末尾增加红色“删除会话”，二次确认后真正删除会话记录。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "session",
+    "sidebar"
+  ],
+  "license": "MIT",
+  "author": "0101",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NN-0101/dsh-remove-session.git"
+  },
+  "homepage": "https://github.com/NN-0101/dsh-remove-session#readme",
+  "bugs": {
+    "url": "https://github.com/NN-0101/dsh-remove-session/issues"
+  },
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "host",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check index.js && node --check client.js && node --check host/session-files.js && node --input-type=module -e \"const m = await import('./index.js'); if (typeof m.apply !== 'function') process.exit(1)\""
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    }
+  },
+  "engines": {
+    "node": "^22.15.0 || >=24.0.0"
+  }
+}

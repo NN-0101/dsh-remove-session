@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "title": "删除会话",
+    "description": "在会话「...」菜单末尾增加红色“删除会话”，二次确认后从磁盘删除该会话及其聊天记录。"
+  },
+  "menu.delete": "删除会话",
+  "dialog.title": "删除这个会话？",
+  "dialog.description": "“{title}”将被永久删除，聊天记录会从磁盘移除，且无法恢复。",
+  "dialog.untitled": "这个会话",
+  "dialog.cancel": "取消",
+  "dialog.confirm": "删除",
+  "dialog.deleting": "正在删除…",
+  "dialog.close": "关闭",
+  "error.inUse": "该会话正在使用中，请先切换到其他会话再试。",
+  "error.running": "该会话正在运行，请先停止当前回合再删除。",
+  "error.active": "该会话仍有进行中的工作（回合、子智能体、后台任务或定时提醒），请先停止这些工作。",
+  "error.unsupported": "当前环境不支持删除会话（未挂载会话存储服务）。",
+  "error.failed": "删除失败，请稍后重试。"
+}
