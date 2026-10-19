@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Delete Session",
+    "title": "dsh-remove-session",
     "description": "Adds a red “Delete session” row to every Session's “...” menu; confirming removes the Session and its chat history from disk."
   },
   "menu.delete": "Delete session",

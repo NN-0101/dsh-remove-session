@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "删除会话",
+    "title": "dsh-remove-session",
     "description": "在会话「...」菜单末尾增加红色“删除会话”，二次确认后从磁盘删除该会话及其聊天记录。"
   },
   "menu.delete": "删除会话",
