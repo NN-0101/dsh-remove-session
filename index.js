@@ -187,7 +187,7 @@ async function handleInspect(ctx, root, request, response) {
     const agentIds = (agents?.list?.() ?? []).map((agent) => String(agent.id))
     const payload = {
         ok: true,
-        version: '0.1.1',
+        version: '0.1.2',
         root,
         liveSessionIds,
         agentIds,

@@ -18,29 +18,27 @@
 
 ## 安装
 
-### 方式一：源码安装（当前推荐）
-
-```bash
-dsh plugin --profile web add github:NN-0101/dsh-remove-session
-```
-
-- `--profile web` 是插件市场模板里的示例 profile 名，请换成你实际使用的 profile（例如本机是 `desktop`）。
-- 安装完成后刷新一次 DSH Web 页面，侧栏会话的「…」菜单末尾就会出现红色“删除会话”。
-- 本插件没有构建步骤，GitHub 上的源码可以直接安装。
-
-### 方式二：在 DSH 里安装
-
-打开 **设置 → 插件**，选择安装本地 bundle，指向本仓库目录（或已解压的目录）即可；加载器会读取 `cordis.patch.yml` 并挂载插件。
-
-### 方式三：npm（尚未发布）
-
-包名 `dsh-remove-session` 目前**没有发布到 npm**，所以它暂时不会出现在 DSH 内置的「插件中心」里（插件中心只展示可用 `dsh plugin --profile web add <包名>` 一键安装的 npm 包）。发布后安装命令将是：
+### 方式一：npm（推荐）
 
 ```bash
 dsh plugin --profile web add dsh-remove-session
 ```
 
-在此之前，请使用上面的 GitHub 源码安装命令；按插件市场的规则，源码安装的插件仍会被正常收录。
+- `--profile web` 是插件市场模板里的示例 profile 名，请换成你实际使用的 profile（例如本机是 `desktop`）。
+- 已发布到 npm，因此 DSH 内置的「插件中心」可以直接搜索并一键安装。
+- 安装完成后刷新一次 DSH Web 页面，侧栏会话的「…」菜单末尾就会出现红色“删除会话”。
+
+### 方式二：源码安装（GitHub）
+
+```bash
+dsh plugin --profile web add github:NN-0101/dsh-remove-session
+```
+
+本插件没有构建步骤，GitHub 上的源码可以直接安装；适合想跟最新提交或自己二次开发的情况。
+
+### 方式三：本地目录
+
+打开 **设置 → 插件**，选择安装本地 bundle，指向本仓库目录（或已解压的目录）即可；加载器会读取 `cordis.patch.yml` 并挂载插件。
 
 ---
 
@@ -166,7 +164,7 @@ Host 接口的真实输出（路径与 ID 已脱敏）：
 ```json
 {
   "ok": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "root": "C:\\Users\\<user>\\.dsh\\sessions",
   "liveSessionIds": ["session-<id>"],
   "session": {
@@ -258,13 +256,19 @@ icon.svg                 插件图标
 
 **dsh-remove-session** adds a red **Delete session** action to every Session's “...” menu in the DeepSeek Harness Web UI. After a second confirmation, it permanently removes the Session's JSONL log directory under `$DSH_HOME/sessions`, plus its Workspace membership, pin and archive entries; the sidebar row disappears immediately.
 
+**Install (npm, recommended):**
+
+```bash
+dsh plugin --profile web add dsh-remove-session
+```
+
 **Install (source):**
 
 ```bash
 dsh plugin --profile web add github:NN-0101/dsh-remove-session
 ```
 
-Replace `web` with your profile name (for example `desktop`), then refresh the page. The package is not published to npm yet, so it will not appear in the in-app Plugin Center until it is.
+Replace `web` with your profile name (for example `desktop`), then refresh the page. The npm package is also listed in the in-app Plugin Center, so it can be installed in one click from there.
 
 **Safety:** running sessions, sessions with active subagents/jobs/reminders, and unsaved blank sessions are refused. Only the session's own directory is removed; attachments and other sessions are untouched. Deletion is permanent — use Archive if you may need the conversation later.
 

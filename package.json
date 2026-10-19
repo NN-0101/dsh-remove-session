@@ -1,6 +1,6 @@
 {
   "name": "dsh-remove-session",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "description": "Adds a red “Delete session” action to every Session's “...” menu, with a confirmation dialog and a real on-disk delete. | 在会话「...」菜单末尾增加红色“删除会话”，二次确认后真正删除会话记录。",
   "keywords": [
@@ -42,7 +42,11 @@
   ],
   "scripts": {
     "check": "node --check index.js && node --check client.js && node --check host/session-files.js && node --input-type=module -e \"const m = await import('./index.js'); if (typeof m.apply !== 'function') process.exit(1)\"",
-    "sync-icon": "node scripts/sync-icon.mjs"
+    "sync-icon": "node scripts/sync-icon.mjs",
+    "prepublishOnly": "npm run check"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dsh": {
     "bundle": {
