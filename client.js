@@ -144,22 +144,6 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 按固定轮询间隔等待某个条件成立。
-     *
-     * @param {() => boolean} predicate - 要观察的条件。
-     * @param {number} timeoutMs - 最长等待时间。
-     * @returns {Promise<boolean>} 条件是否变为真。
-     */
-    async function waitFor(predicate, timeoutMs) {
-      const deadline = Date.now() + timeoutMs
-      while (Date.now() < deadline) {
-        if (predicate()) return true
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-      return predicate()
-    }
-
-    /**
      * 调用一次 Host 删除接口。
      *
      * @param {string} sessionId - 要删除的会话。
@@ -181,12 +165,12 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 端到端删除一个会话：主视图正持有它时先离开，请求 Host 删除，然后从
-     * 实时会话列表里移除该行。
+     * 端到端删除一个会话：请求 Host 删除，成功后让主视图离开并移除列表行。
      *
-     * 先导航离开会释放主视图的 retain，对话界面就不会停留在即将被删除的会话
-     * 上。Host 会拒绝回合仍在运行的会话；这段短暂等待是给刚被释放的 Agent
-     * 留出销毁时间。
+     * 顺序很重要：先请求 Host，被拒绝时不做任何导航。离开主视图必须用
+     * `clearMain()` —— 它只释放主视图持有的引用、清空选择，不会创建会话。
+     * 不能用 `startSession()`：它会经 `connectBlank()` 真的新建一个空白会话，
+     * 于是删除被拒绝（例如回合仍在运行）时也会凭空多出一个新会话。
      *
      * @param {import('@deepseek-ai/cordis').Context} ctx - Client 插件上下文。
      * @param {{ sessionId: string, displayTitle?: string }} request - 待处理的请求。
@@ -197,17 +181,6 @@ window.__ModuleLoader__.load({
       const sessions = ctx.get('sessions')
       const summary = sessions && sessions.list ? sessions.list.getSnapshot().byId[sessionId] : undefined
       const heldByMainView = summary !== undefined && summary.retainedBy !== undefined && (summary.retainedBy.mainView ?? 0) > 0
-      if (heldByMainView) {
-        const workspaces = ctx.get('workspaces')
-        const items = workspaces && workspaces.list ? workspaces.list.getSnapshot().items : []
-        const workspaceId = (Array.isArray(items) ? items : []).find((item) => Array.isArray(item.sessionIds) && item.sessionIds.includes(sessionId))?.workspaceId
-        const uiWorkspace = ctx.get('uiWorkspace')
-        if (uiWorkspace !== undefined && typeof uiWorkspace.startSession === 'function') uiWorkspace.startSession(workspaceId)
-        await waitFor(() => {
-          const current = sessions && sessions.list ? sessions.list.getSnapshot().byId[sessionId] : undefined
-          return current === undefined || current.agentAvailable !== true
-        }, 2500)
-      }
 
       const result = await callDeleteEndpoint(sessionId)
       if (!result.ok) {
@@ -216,6 +189,20 @@ window.__ModuleLoader__.load({
         error.detail = result.error && result.error.detail
         throw error
       }
+
+      // 删除已经成功。主视图仍持有该会话的引用时，先离开它，让客户端释放
+      // 引用并把界面切空白；clearMain() 不会创建任何会话。
+      if (heldByMainView) {
+        const uiWorkspace = ctx.get('uiWorkspace')
+        if (uiWorkspace !== undefined && typeof uiWorkspace.clearMain === 'function') {
+          try {
+            uiWorkspace.clearMain()
+          } catch (error) {
+            console.warn('dsh-remove-session: leaving the deleted session failed:', error)
+          }
+        }
+      }
+
       if (sessions !== undefined) {
         if (typeof sessions.handleSessionRemoved === 'function') sessions.handleSessionRemoved(sessionId)
         else if (typeof sessions.refresh === 'function') sessions.refresh()
@@ -432,7 +419,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'sessions', 'locale'],
+      inject: ['slots', 'sessions', 'locale', 'uiWorkspace'],
       apply,
     }
   },

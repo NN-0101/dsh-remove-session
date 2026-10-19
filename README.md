@@ -88,8 +88,9 @@ dsh plugin --profile web add github:NN-0101/dsh-remove-session
 - **二次确认**：自定义弹窗，红色危险按钮；确认前不会执行任何删除。
 - **真正的删除**：删除该会话独占的 JSONL 日志目录（`$DSH_HOME/sessions/--<项目>--/<会话ID>/`），并从 Workspace registry 中移除它的归属、置顶和归档记录。
 - **即时反馈**：删除成功后客户端会话列表立刻移除该行；侧栏不会残留“幽灵会话”。
-- **打开会话时先切走**：如果删除的是主视图正在显示的会话，客户端先切到一个新会话，再执行删除，避免停留在已删除的对话上。
-- **安全拒绝**：正在运行的回合、进行中的子智能体/后台任务/定时提醒、尚未落盘的空白新会话，都会被拒绝并给出提示。
+- **内存与磁盘一起删**：会话会先从 Host 的内存 store 摘除，再删除磁盘目录，所以不会留下“侧栏还在、磁盘已空”的幽灵会话。
+- **不会新建会话**：删除成功后，若主视图正显示该会话，客户端只清空主视图（释放引用），不会创建新会话；删除被拒绝时也不会做任何导航。
+- **安全拒绝**：正在运行的回合、进行中的子智能体/后台任务/定时提醒，都会被拒绝并给出提示。
 - **中英双语**：`locale/zh.json`、`locale/en.json` 以及客户端内嵌字典。
 - **图标可替换**：插件卡片使用 `icon.svg`；菜单行的删除图标取自同一份图标（以 data URL 内嵌在 `client.js`，按行内文字颜色着色），替换后运行 `npm run sync-icon` 即可同步。
 
@@ -127,10 +128,22 @@ dsh plugin --profile web add github:NN-0101/dsh-remove-session
 
 | 半边 | 职责 |
 | --- | --- |
-| Host（`index.js`、`host/session-files.js`） | 注册同源接口 `POST /plugin/dsh-remove-session/delete`；校验会话状态与进行中的工作；flush 待写事件；删除 JSONL 会话目录；从 Workspace registry 摘除归属/置顶/归档；发出 `api-session/removed` |
-| Client（`client.js`） | 在 `sidebar.workspaces.session.menu.item` 注册红色菜单行，在 `shell.overlay` 注册确认弹窗；确认后调用 Host 接口，并从客户端会话列表移除该行 |
+| Host（`index.js`、`host/session-files.js`） | 注册同源接口 `POST /plugin/dsh-remove-session/delete`；校验会话状态与进行中的工作；flush 待写事件；**先把会话从 Host 内存 store 里摘掉**（触发 `session/disposed`，让持久化关闭写句柄、投影缓存落盘）；再删除 JSONL 会话目录；从 Workspace registry 摘除归属/置顶/归档；发出 `api-session/removed` |
+| Client（`client.js`） | 在 `sidebar.workspaces.session.menu.item` 注册红色菜单行，在 `shell.overlay` 注册确认弹窗；确认后调用 Host 接口，成功后移除列表行并按需清空主视图 |
 
 删除动作必须由 Host 完成：DSH 的 JSONL 持久化后端没有删除 API，会话日志以目录形式存放在 `$DSH_HOME/sessions` 下，因此插件直接删除该会话独占的目录，不触碰共享存储。
+
+### 为什么必须先摘内存、再删目录
+
+DSH 的会话列表是**“磁盘上已存储的会话”与“内存里 live 的会话”的并集**（见 `@deepseek-ai/dsh-session-query` 的 `listSessions`）。只删磁盘目录时，该会话仍以 live 身份留在列表里；而它的 Workspace 归属已被清空，于是它掉进“未分组”。再次删除时，磁盘上已经没有目录、内存里却还有会话，就会被判成“正在使用中”，永远删不掉。
+
+0.1.3 起改为先用 `SessionStore` 表项自带的 `detach` 闭包把会话摘出内存（等价于官方 `detachEntered()`，会发出配对的 `session/disposed`），再删磁盘目录，因此不会再出现“已删除的会话跑到未分组且删不掉”的现象。
+
+### 为什么删除被拒绝时不新建会话
+
+0.1.3 及更早的客户端在删除前用 `uiWorkspace.startSession(workspaceId)` 离开主视图，但这个 API 会经 `connectBlank()` 真正新建一个空白会话。于是删除正在运行的会话时，Host 虽然拒绝了删除，界面上却已经多出一个新会话。
+
+0.1.4 起改为**先请求 Host，成功后才导航**，且导航用 `uiWorkspace.clearMain()` —— 它只释放主视图持有的引用并清空选择，不会创建任何会话。删除被拒绝时（运行中、仍有进行中的工作等），界面不会有任何变化。
 
 ### 目录定位
 
@@ -153,7 +166,7 @@ $DSH_HOME/sessions/
 GET /plugin/dsh-remove-session/inspect?sessionId=<会话ID>
 ```
 
-返回该会话是否 live、磁盘目录、是否置顶/归档、归属的 Workspace。用于排查“为什么删不掉”。
+返回该会话是否 live、磁盘目录、是否置顶/归档、归属的 Workspace，以及 `orphaned` —— 该会话是“内存里 live、磁盘上无目录、Workspace 里无归属”的幽灵状态（0.1.2 只删目录的遗留物，0.1.3 起再次删除即可清掉）。用于排查“为什么删不掉”。
 
 ---
 
@@ -164,7 +177,7 @@ Host 接口的真实输出（路径与 ID 已脱敏）：
 ```json
 {
   "ok": true,
-  "version": "0.1.2",
+  "version": "0.1.4",
   "root": "C:\\Users\\<user>\\.dsh\\sessions",
   "liveSessionIds": ["session-<id>"],
   "session": {
@@ -173,7 +186,8 @@ Host 接口的真实输出（路径与 ID 已脱敏）：
     "directories": ["C:\\Users\\<user>\\.dsh\\sessions\\--C-0101-developer-project-DSH--\\session-<id>"],
     "archived": false,
     "pinned": false,
-    "workspaces": ["<workspace-id>"]
+    "workspaces": ["<workspace-id>"],
+    "orphaned": false
   }
 }
 ```
@@ -192,8 +206,6 @@ Host 接口的真实输出（路径与 ID 已脱敏）：
 - **不级联删除子会话**：subagent 会话仍保留在磁盘上（它们默认不出现在侧栏）。
 - **投影缓存可能残留**：`$DSH_HOME/storages` 中该会话的检查点文档不会被清理；它按会话 id 读取，删除后不会被展示，也不会让会话“复活”。
 - **替换图标需要同步**：`icon.svg` 是插件卡片图标；菜单行使用由它生成的 `client.js` 内嵌副本，修改图标后需运行 `npm run sync-icon`，否则菜单行仍是旧图标。
-- **空白新会话不能删**：尚未落盘、仅存在于内存的“新会话”没有文件可删，插件会拒绝而不是假装成功。
-- **极端情况下的重影**：如果会话仍被后台标签页持有，删除后本页刷新前它可能仍出现在内存中的列表里；重新加载页面即彻底消失。
 - **删除不可恢复**：没有回收站。
 
 ---
@@ -207,11 +219,11 @@ Host 接口的真实输出（路径与 ID 已脱敏）：
 ## 开发
 
 ```bash
-# 语法与模块检查
-node --check index.js
-node --check client.js
-node --check host/session-files.js
-node --input-type=module -e "const m = await import('./index.js'); console.log(typeof m.apply)"
+# 语法、模块与删除流程检查
+npm run check
+
+# 只跑删除流程测试
+npm test
 
 # 替换 icon.svg 后，把图标同步到客户端菜单行
 npm run sync-icon
@@ -226,6 +238,7 @@ dsh plugin --profile web add C:/path/to/dsh-remove-session
 index.js                 Host 半边：HTTP 接口、删除编排、Workspace 清理
 host/session-files.js    会话目录定位、ID 转义、递归删除
 client.js                Client 半边：菜单行、确认弹窗、列表更新
+test/delete-flow.test.mjs 删除流程测试（顺序、幽灵会话、运行中拒绝、幂等、只删自己）
 scripts/sync-icon.mjs    把 icon.svg 同步成 client.js 里的内嵌图标
 cordis.patch.yml         bundle 配置层
 locale/{zh,en}.json      Plugin Manager 元数据与文案
@@ -270,6 +283,6 @@ dsh plugin --profile web add github:NN-0101/dsh-remove-session
 
 Replace `web` with your profile name (for example `desktop`), then refresh the page. The npm package is also listed in the in-app Plugin Center, so it can be installed in one click from there.
 
-**Safety:** running sessions, sessions with active subagents/jobs/reminders, and unsaved blank sessions are refused. Only the session's own directory is removed; attachments and other sessions are untouched. Deletion is permanent — use Archive if you may need the conversation later.
+**Safety:** running sessions and sessions with active subagents/jobs/reminders are refused. The session is detached from the Host's live store first — the list is the union of stored and live Sessions, so removing only the directory would leave it live with no Workspace membership — and only then is its directory removed. A refused deletion performs no navigation and creates no Session; a successful one clears the main view instead of opening a new Session. Attachments and other sessions are untouched. Deletion is permanent — use Archive if you may need the conversation later.
 
 Requires DSH 0.2.x (tested on 0.2.1-rc.2) with the Web UI; Node `^22.15.0 || >=24.0.0`. MIT licensed.

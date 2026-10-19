@@ -10,19 +10,41 @@
  * 安全规则：
  * - 会话的 Agent 正在运行时拒绝删除；
  * - `workspace/session-activity` 报告仍有进行中的工作时拒绝删除；
+ * - 删除前先把会话从 Host 的内存 store 里摘掉：DSH 的会话列表是“磁盘上
+ *   已存储的会话 ∪ 内存里 live 的会话”的并集，只删磁盘目录会让会话以
+ *   live 身份留在列表里（并且因为归属已清空而落进“未分组”），下次再删
+ *   又会因为磁盘上没有目录而报“正在使用中”；
  * - 删除文件前先 flush 尚未落盘的写入；
  * - 只删除精确匹配的、已转义的会话目录；附件和其他内容寻址存储保持不动。
  *
  * @module dsh-remove-session
  */
 
+import {readFileSync} from 'node:fs'
 import {findSessionDirectories, removeSessionDirectory, resolveSessionsRoot} from './host/session-files.js'
 
 /** 本 bundle 独占的 HTTP 路由前缀。 */
 const ROUTE_PREFIX = '/plugin/dsh-remove-session'
 
+/** 本 bundle 的版本号，取自随包发布的 package.json，避免和实际代码脱节。 */
+const VERSION = readVersion()
+
 /** 本插件激活所必需的 Host 服务。 */
 export const inject = ['webServer']
+
+/**
+ * 读取本包 package.json 里的版本号。
+ *
+ * @returns {string} 版本号；读取失败时返回 `unknown`。
+ */
+function readVersion() {
+    try {
+        const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+        return typeof manifest.version === 'string' ? manifest.version : 'unknown'
+    } catch {
+        return 'unknown'
+    }
+}
 
 /**
  * 安装删除相关的 HTTP 接口。
@@ -187,7 +209,7 @@ async function handleInspect(ctx, root, request, response) {
     const agentIds = (agents?.list?.() ?? []).map((agent) => String(agent.id))
     const payload = {
         ok: true,
-        version: '0.1.2',
+        version: VERSION,
         root,
         liveSessionIds,
         agentIds,
@@ -211,6 +233,11 @@ async function handleInspect(ctx, root, request, response) {
                 .map((workspace) => String(workspace.id)),
             ...directoryError === undefined ? {} : {directoryError},
         }
+        // 0.1.2 的“只删目录、不摘内存”留下的幽灵会话：内存里 live、磁盘上
+        // 没有目录、Workspace 里也没有归属。这个标记让“为什么删不掉”一眼可见。
+        payload.session.orphaned = payload.session.live
+            && directories.length === 0
+            && payload.session.workspaces.length === 0
     }
     sendJson(response, 200, payload)
 }
@@ -228,20 +255,13 @@ async function handleInspect(ctx, root, request, response) {
  * @returns {Promise<undefined | { code: string, detail?: string }>} 失败描述。
  */
 async function deleteSession(ctx, root, sessionId) {
-    const agents = ctx.get('agents')
-    const agent = agents?.get?.(sessionId)
+    const agent = ctx.get('agents')?.get?.(sessionId)
     if (agent !== undefined && agent.status === 'running') return {code: 'session-running'}
 
     const persistence = ctx.get('sessionPersistence')
     if (persistence === undefined) return {code: 'unsupported'}
 
     const directories = await findSessionDirectories(root, sessionId)
-    if (directories.length === 0 && ctx.get('sessions')?.get?.(sessionId) !== undefined) {
-        // 没有落盘日志的 live 会话，是尚未实际写入的空白“新会话”，它的 pending
-        // 记录只存在于当前进程内存里；此时没有文件可删，删了也会在列表里重新出现，
-        // 所以直接拒绝，而不是假装删除成功。
-        return {code: 'session-in-use'}
-    }
 
     if (typeof persistence.stat === 'function') {
         try {
@@ -255,7 +275,9 @@ async function deleteSession(ctx, root, sessionId) {
     const activity = await sessionActivity(ctx, sessionId)
     if (activity.length > 0) return {code: 'session-active', detail: activity.map(describeActivity).join(', ')}
 
-    if (typeof persistence.flush === 'function') {
+    // 有落盘目录时才 flush：flush 会把“从未写入的空白会话”materialize 成磁盘
+    // 文件，那样本来没有文件可删的会话会凭空多出一个目录。
+    if (directories.length > 0 && typeof persistence.flush === 'function') {
         try {
             await persistence.flush()
         } catch (error) {
@@ -263,7 +285,27 @@ async function deleteSession(ctx, root, sessionId) {
         }
     }
 
-    for (const directory of directories) await removeSessionDirectory(directory)
+    // 关键顺序：先把会话从 Host 的内存 store 里摘掉，再删磁盘目录。
+    //
+    // 反过来做就是 0.1.2 的 bug：DSH 的会话列表是“磁盘上已存储的会话 ∪
+    // 内存里 live 的会话”的并集。只删目录时，会话仍以 live 身份留在列表里；
+    // 而它的 Workspace 归属已被清空，于是它掉进“未分组”。再次删除时，磁盘上
+    // 已经没有目录、内存里却还有会话，就被旧逻辑判成“正在使用中”。
+    const detached = await detachLiveSession(ctx, sessionId)
+    if (detached === 'running') return {code: 'session-running'}
+    if (detached === 'unsupported' && directories.length === 0) return {code: 'session-in-use'}
+
+    if (directories.length === 0) {
+        // 没有落盘目录的会话（从未写入的空白新会话，或被 0.1.2 只删了目录的
+        // 幽灵会话）：内存记录就是它的全部。摘除会触发 session/disposed，让
+        // 持久化关闭写句柄并丢掉它那条内存 pending 记录；等它真的从 persistence
+        // 视图里消失，避免紧接着的列表刷新又把它列回来。
+        await waitUntilAbsent(ctx, persistence, sessionId)
+    }
+
+    // 摘除会触发 session/disposed → 持久化关闭写句柄；关闭过程可能把缓冲区里
+    // 剩余的事件落盘。所以删目录前重新扫描一次，收尾写入不会留下残骸。
+    for (const directory of await findSessionDirectories(root, sessionId)) await removeSessionDirectory(directory)
 
     await forgetInWorkspaces(ctx, sessionId)
     try {
@@ -272,6 +314,68 @@ async function deleteSession(ctx, root, sessionId) {
         ctx.logger?.warn?.(`dsh-remove-session: announcing removal of "${sessionId}" failed: ${messageOf(error)}`)
     }
     return undefined
+}
+
+/**
+ * 把一个仍然 live 的会话从 Host 的内存 store 里摘掉。
+ *
+ * DSH 没有公开的“关闭会话”接口：Session 的 detach 能力是
+ * `SessionStore.enter()` 交给创建者的闭包，`ctx.get('sessions')` 上拿不到。
+ * 但 store 表项本身带着同一个 `detach` 闭包，调用它等价于官方
+ * `detachEntered()`：删除表项、解除 attachment，并发出配对的
+ * `session/disposed` —— 会话持久化据此关闭写句柄，投影缓存据此落盘，
+ * Session Controller 据此把 `api-session/removed` 转发给客户端。
+ *
+ * 只处理已经 idle 的会话：仍在运行的回合必须由用户先停止，绝不在这里
+ * 强行取消。
+ *
+ * @param {import('@deepseek-ai/cordis').Context} ctx - Host 插件上下文。
+ * @param {string} sessionId - 要摘除的会话。
+ * @returns {Promise<'removed' | 'absent' | 'running' | 'unsupported'>} 摘除结果。
+ */
+async function detachLiveSession(ctx, sessionId) {
+    const sessions = ctx.get('sessions')
+    if (sessions === undefined) return 'unsupported'
+    const store = sessions.store
+    if (!(store instanceof Map)) return 'unsupported'
+    const entry = store.get(sessionId)
+    if (entry === undefined) return 'absent'
+    if (typeof entry.detach !== 'function') return 'unsupported'
+    try {
+        entry.detach()
+    } catch (error) {
+        ctx.logger?.warn?.(`dsh-remove-session: detaching "${sessionId}" failed: ${messageOf(error)}`)
+        return 'absent'
+    }
+    return 'removed'
+}
+
+/**
+ * 等待 persistence 不再列出某个会话。
+ *
+ * 未落盘的会话在 backend 里有一条内存 pending 记录，`session/disposed` 触发的
+ * 异步关闭才会把它删掉；删除请求返回前等它消失，客户端的列表刷新就不会再看到
+ * 这一行（否则会表现为“删了又回来”）。
+ *
+ * @param {import('@deepseek-ai/cordis').Context} ctx - Host 插件上下文。
+ * @param {{ list?: () => Promise<Array<{ header?: { id?: string } }>> }} persistence - 会话持久化服务。
+ * @param {string} sessionId - 要等待消失的会话。
+ * @returns {Promise<void>} 会话不再可见或超时后 resolve。
+ */
+async function waitUntilAbsent(ctx, persistence, sessionId) {
+    if (typeof persistence.list !== 'function') return
+    const deadline = Date.now() + 1500
+    for (;;) {
+        try {
+            const snapshots = await persistence.list()
+            if (!snapshots.some((snapshot) => snapshot.header?.id === sessionId)) return
+        } catch (error) {
+            ctx.logger?.warn?.(`dsh-remove-session: listing persistence after deleting "${sessionId}" failed: ${messageOf(error)}`)
+            return
+        }
+        if (Date.now() >= deadline) return
+        await new Promise((resolve) => setTimeout(resolve, 50))
+    }
 }
 
 /**
