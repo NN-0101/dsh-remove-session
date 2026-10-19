@@ -33,6 +33,7 @@
     "index.js",
     "client.js",
     "host",
+    "scripts",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
@@ -40,7 +41,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "node --check index.js && node --check client.js && node --check host/session-files.js && node --input-type=module -e \"const m = await import('./index.js'); if (typeof m.apply !== 'function') process.exit(1)\""
+    "check": "node --check index.js && node --check client.js && node --check host/session-files.js && node --input-type=module -e \"const m = await import('./index.js'); if (typeof m.apply !== 'function') process.exit(1)\"",
+    "sync-icon": "node scripts/sync-icon.mjs"
   },
   "dsh": {
     "bundle": {

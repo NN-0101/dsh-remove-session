@@ -8,6 +8,8 @@ window.__ModuleLoader__.load({
     const NS = 'dsh-remove-session'
     /** 由本 bundle 的 Host 半边安装的删除接口。 */
     const DELETE_ENDPOINT = '/plugin/dsh-remove-session/delete'
+    /** 插件图标（icon.svg）的 base64 data URL，由 `npm run sync-icon` 生成，菜单行复用它绘制删除图标。 */
+    const ICON_DATA_URL = 'data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBzdGFuZGFsb25lPSJubyI/PjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+PHN2ZyB0PSIxNzkyMzk1ODAzMzYzIiBjbGFzcz0iaWNvbiIgdmlld0JveD0iMCAwIDEwMjQgMTAyNCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHAtaWQ9IjU2MTMiIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCI+PHBhdGggZD0iTTM1OC45MjU2NzIgNTk2LjgxNDY4OHYzMC40NTA1MjJjMCAxNy4yNDg4NDkgMTMuOTg1NTI2IDMxLjIzMzM1MiAzMS4yMzMzNTIgMzEuMjMzMzUyIDE3LjI0ODg0OSAwIDMxLjIzMzM1Mi0xMy45ODU1MjYgMzEuMjMzMzUyLTMxLjIzMzM1MnYtMzAuNDUwNTIyYzAtMTcuMjQ4ODQ5LTEzLjk4NTUyNi0zMS4yMzMzNTItMzEuMjMzMzUyLTMxLjIzMzM1Mi0xNy4yNDg4NDkgMC0zMS4yMzMzNTIgMTMuOTg1NTI2LTMxLjIzMzM1MiAzMS4yMzMzNTJ6TTYwMi41MDYzMTcgNTk2LjgxNDY4OHYzMC40NTA1MjJjMCAxNy4yNDg4NDkgMTMuOTg1NTI2IDMxLjIzMzM1MiAzMS4yMzMzNTIgMzEuMjMzMzUyczMxLjIzMzM1Mi0xMy45ODU1MjYgMzEuMjMzMzUxLTMxLjIzMzM1MnYtMzAuNDUwNTIyYzAtMTcuMjQ4ODQ5LTEzLjk4NDUwMy0zMS4yMzMzNTItMzEuMjMzMzUxLTMxLjIzMzM1MnMtMzEuMjMzMzUyIDEzLjk4NTUyNi0zMS4yMzMzNTIgMzEuMjMzMzUyek00MzcuMDQ3OTM3IDY5OS42ODY2MzZjLTE0LjY1MDY3NSA5LjEwNDM1NS0xOS4xNTUyNjkgMjguMzYwOTMxLTEwLjA0OTg5IDQzLjAxMjYzIDExLjAxNTg5MSAxNy43MzE4NSA0MS4yMzgyMTYgNDcuNzQwMzA0IDg0LjY1MTk4MiA0Ny43NDAzMDQgNDMuMTk1ODAxIDAgNzMuNzkzNjgtMjkuNzgwMjU3IDg1LjA1OTI1OC00Ny4zNzkwNzcgOS4yMTY5MTktMTQuMzkxNzc4IDUuMDMyNjItMzMuMzM4MjkzLTkuMjM3Mzg1LTQyLjc0MjQ3Ny0xNC4yNzAwMDUtOS4zOTM5NTEtMzMuNTc2NzIzLTUuNDA5MTk3LTQzLjE1OTk4NSA4LjczOTAzNS0wLjEyNjg5IDAuMTg4Mjg4LTEzLjA0OTIwMSAxOC45MTU4MTUtMzIuNjYxODg4IDE4LjkxNTgxNS0xOS4wMjgzNzkgMC0zMC45Mzg2NC0xNy4yNzQ0MzItMzEuNzcyNjM0LTE4LjUzMDAyOC05LjE3NTk4Ny0xNC40MTIyNDQtMjguMjU5NjI0LTE4Ljc4ODkyNS00Mi44Mjk0NTgtOS43NTYyMDJ6TTkwNy41NzY0MDcgMTYwLjA4Mjk1Mkg2OTkuMzUyMDE1di0yNi44ODIyNTRjMC00MC4xNDUzMjUtMzIuNjkyNTg2LTcyLjgwNzIxMy03Mi44Nzg4NDQtNzIuODA3MjEzaC0yMjkuMDQ2NjI2Yy00MC4xODYyNTggMC03Mi44Nzg4NDQgMzIuNjYxODg3LTcyLjg3ODg0NCA3Mi44MDcyMTN2MjYuODgyMjU0SDExNi4zMjMzMDljLTE3LjI0ODg0OSAwLTMxLjIzMzM1MiAxMy45ODQ1MDMtMzEuMjMzMzUyIDMxLjIzMzM1MnMxMy45ODQ1MDMgMzEuMjMzMzUyIDMxLjIzMzM1MiAzMS4yMzMzNTFoNzkxLjI1MzA5OGMxNy4yNDg4NDkgMCAzMS4yMzMzNTItMTMuOTg0NTAzIDMxLjIzMzM1Mi0zMS4yMzMzNTFzLTEzLjk4NTUyNi0zMS4yMzMzNTItMzEuMjMzMzUyLTMxLjIzMzM1MnogbS0yNzAuNjkyMTE5IDBIMzg3LjAxNDQwNHYtMjYuODgyMjU0YzAtNS42MDc3MTggNC43Njg2MDctMTAuMzQwNTA5IDEwLjQxMTExNy0xMC4zNDA1MDloMjI5LjA0NjYyN2M1LjY0MjUxIDAgMTAuNDExMTE3IDQuNzMyNzkxIDEwLjQxMTExNyAxMC4zNDA1MDl2MjYuODgyMjU0eiIgZmlsbD0iIzk5OTk5OSIgcC1pZD0iNTYxNCI+PC9wYXRoPjxwYXRoIGQ9Ik04MjQuMjg2NDQ2IDI1OS4yNzkxODVjLTE3LjI0ODg0OSAwLTMxLjIzMzM1MiAxMy45ODQ1MDMtMzEuMjMzMzUyIDMxLjIzMzM1MnY1MzAuMDcyNjFjMCA0MC4wODkwNDQtMzIuNjkyNTg2IDcyLjcwNTkwNS03Mi44Nzg4NDQgNzIuNzA1OTA2SDMwMy43MjU0NjZjLTQwLjE4NjI1OCAwLTcyLjg3ODg0NC0zMi42MTY4NjItNzIuODc4ODQ0LTcyLjcwNTkwNnYtNTMwLjA3MjYxYzAtMTcuMjQ4ODQ5LTEzLjk4NDUwMy0zMS4yMzMzNTItMzEuMjMzMzUyLTMxLjIzMzM1MnMtMzEuMjMzMzUyIDEzLjk4NDUwMy0zMS4yMzMzNTIgMzEuMjMzMzUydjUzMC4wNzI2MWMwIDc0LjUzNTU3NyA2MC43MTM3OCAxMzUuMTcyNjA5IDEzNS4zNDU1NDggMTM1LjE3MjYwOWg0MTYuNDQ4Nzg0Yzc0LjYzMjc5MSAwIDEzNS4zNDU1NDgtNjAuNjM3MDMyIDEzNS4zNDU1NDgtMTM1LjE3MjYwOXYtNTMwLjA3MjYxYzAtMTcuMjQ4ODQ5LTEzLjk4NDUwMy0zMS4yMzMzNTItMzEuMjMzMzUyLTMxLjIzMzM1MnoiIGZpbGw9IiM5OTk5OTkiIHAtaWQ9IjU2MTUiPjwvcGF0aD48cGF0aCBkPSJNMzU1Ljc4MTA1MiAyNTkuMjc5MTg1Yy0xNy4yNDg4NDkgMC0zMS4yMzMzNTIgMTMuOTg0NTAzLTMxLjIzMzM1MSAzMS4yMzMzNTJ2MTY3LjQ5NDc1OGMwIDE3LjI0ODg0OSAxMy45ODU1MjYgMzEuMjMzMzUyIDMxLjIzMzM1MSAzMS4yMzMzNTIgMTcuMjQ4ODQ5IDAgMzEuMjMzMzUyLTEzLjk4NTUyNiAzMS4yMzMzNTItMzEuMjMzMzUydi0xNjcuNDk0NzU4YzAtMTcuMjQ4ODQ5LTEzLjk4NDUwMy0zMS4yMzMzNTItMzEuMjMzMzUyLTMxLjIzMzM1MnpNNjk5LjM1MjAxNSA0NTguMDA3Mjk1di0xNjcuNDk0NzU4YzAtMTcuMjQ4ODQ5LTEzLjk4NDUwMy0zMS4yMzMzNTItMzEuMjMzMzUxLTMxLjIzMzM1MnMtMzEuMjMzMzUyIDEzLjk4NDUwMy0zMS4yMzMzNTIgMzEuMjMzMzUydjE2Ny40OTQ3NThjMCAxNy4yNDg4NDkgMTMuOTg1NTI2IDMxLjIzMzM1MiAzMS4yMzMzNTIgMzEuMjMzMzUyczMxLjIzMzM1Mi0xMy45ODQ1MDMgMzEuMjMzMzUxLTMxLjIzMzM1MnpNNTExLjk0OTg1OCA0ODkuMjQwNjQ3YzE3LjI0ODg0OSAwIDMxLjIzMzM1Mi0xMy45ODU1MjYgMzEuMjMzMzUyLTMxLjIzMzM1MnYtMTY3LjQ5NDc1OGMwLTE3LjI0ODg0OS0xMy45ODU1MjYtMzEuMjMzMzUyLTMxLjIzMzM1Mi0zMS4yMzMzNTJzLTMxLjIzMzM1MiAxMy45ODQ1MDMtMzEuMjMzMzUyIDMxLjIzMzM1MnYxNjcuNDk0NzU4Yy0wLjAwMTAyMyAxNy4yNDg4NDkgMTMuOTg0NTAzIDMxLjIzMzM1MiAzMS4yMzMzNTIgMzEuMjMzMzUyeiIgZmlsbD0iIzk5OTk5OSIgcC1pZD0iNTYxNiI+PC9wYXRoPjwvc3ZnPg=='
     /** 菜单位置：排在官方“复制 Session ID”（450）之后，确保它是最后一行。 */
     const MENU_ORDER = 500
 
@@ -51,7 +53,7 @@ window.__ModuleLoader__.load({
 .drs-menu-item{display:flex;align-items:center;gap:6px;width:100%;min-height:34px;padding:6px 8px;border:none;border-radius:var(--dsw-radius-md);background:transparent;cursor:pointer;font-size:13px;line-height:20px;text-align:left;color:var(--dsw-alias-state-error-primary)}
 .drs-menu-item:hover,.drs-menu-item:focus-visible{background:var(--dsw-alias-interactive-bg-hover-danger,var(--dsw-alias-interactive-bg-hover));outline:none}
 .drs-menu-icon{display:inline-flex;flex:none;width:14px;height:14px;align-items:center;justify-content:center;color:inherit}
-.drs-menu-icon svg{width:14px;height:14px}
+.drs-menu-icon-art{display:block;width:14px;height:14px;background:currentColor;-webkit-mask:var(--drs-menu-icon) center/contain no-repeat;mask:var(--drs-menu-icon) center/contain no-repeat}
 .drs-menu-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .drs-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:max(24px,var(--dsh-frame-overlay-top,24px)) 24px;pointer-events:auto}
 .drs-mask{position:absolute;inset:var(--dsh-frame-chrome-top,0px) 0 0;background:var(--dsw-alias-bg-mask-1,color-mix(in srgb,var(--dsw-alias-bg-base) 40%,transparent));backdrop-filter:var(--dsw-mask-blur)}
@@ -224,13 +226,13 @@ window.__ModuleLoader__.load({
 
     // #region 图标
 
-    /** 菜单行里的描边垃圾桶图标。 */
-    function TrashIcon() {
-      return h('svg', { viewBox: '0 0 16 16', width: 14, height: 14, 'aria-hidden': 'true', focusable: 'false' },
-        h('path', { d: 'M3 4.5h10', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round' }),
-        h('path', { d: 'M6 4.5V3.4c0-.5.4-.9.9-.9h2.2c.5 0 .9.4.9.9v1.1', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round' }),
-        h('path', { d: 'M4.4 4.5l.6 8.2c.05.7.63 1.3 1.35 1.3h3.3c.72 0 1.3-.6 1.35-1.3l.6-8.2', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, strokeLinejoin: 'round' }),
-        h('path', { d: 'M6.7 7v4.4M9.3 7v4.4', fill: 'none', stroke: 'currentColor', strokeWidth: 1.2, strokeLinecap: 'round' }))
+    /** 菜单行里的删除图标：用当前文字颜色绘制插件图标，替换 icon.svg 即可同步更新。 */
+    function MenuIcon() {
+      return h('span', { className: 'drs-menu-icon', 'aria-hidden': 'true' },
+        h('span', {
+          className: 'drs-menu-icon-art',
+          style: { '--drs-menu-icon': `url("${ICON_DATA_URL}")` },
+        }))
     }
 
     /** 确认弹窗右上角的关闭图标。 */
@@ -268,7 +270,7 @@ window.__ModuleLoader__.load({
             requestDelete({ sessionId, displayTitle: typeof displayTitle === 'string' ? displayTitle : '' })
           },
         },
-          h('span', { className: 'drs-menu-icon' }, h(TrashIcon)),
+          h(MenuIcon),
           h('span', { className: 'drs-menu-label' }, label)))
     }
 

@@ -93,6 +93,7 @@ dsh plugin --profile web add dsh-remove-session
 - **打开会话时先切走**：如果删除的是主视图正在显示的会话，客户端先切到一个新会话，再执行删除，避免停留在已删除的对话上。
 - **安全拒绝**：正在运行的回合、进行中的子智能体/后台任务/定时提醒、尚未落盘的空白新会话，都会被拒绝并给出提示。
 - **中英双语**：`locale/zh.json`、`locale/en.json` 以及客户端内嵌字典。
+- **图标可替换**：插件卡片使用 `icon.svg`；菜单行的删除图标取自同一份图标（以 data URL 内嵌在 `client.js`，按行内文字颜色着色），替换后运行 `npm run sync-icon` 即可同步。
 
 ---
 
@@ -192,6 +193,7 @@ Host 接口的真实输出（路径与 ID 已脱敏）：
 
 - **不级联删除子会话**：subagent 会话仍保留在磁盘上（它们默认不出现在侧栏）。
 - **投影缓存可能残留**：`$DSH_HOME/storages` 中该会话的检查点文档不会被清理；它按会话 id 读取，删除后不会被展示，也不会让会话“复活”。
+- **替换图标需要同步**：`icon.svg` 是插件卡片图标；菜单行使用由它生成的 `client.js` 内嵌副本，修改图标后需运行 `npm run sync-icon`，否则菜单行仍是旧图标。
 - **空白新会话不能删**：尚未落盘、仅存在于内存的“新会话”没有文件可删，插件会拒绝而不是假装成功。
 - **极端情况下的重影**：如果会话仍被后台标签页持有，删除后本页刷新前它可能仍出现在内存中的列表里；重新加载页面即彻底消失。
 - **删除不可恢复**：没有回收站。
@@ -213,6 +215,9 @@ node --check client.js
 node --check host/session-files.js
 node --input-type=module -e "const m = await import('./index.js'); console.log(typeof m.apply)"
 
+# 替换 icon.svg 后，把图标同步到客户端菜单行
+npm run sync-icon
+
 # 本地安装（把路径换成你的仓库目录）
 dsh plugin --profile web add C:/path/to/dsh-remove-session
 ```
@@ -223,6 +228,7 @@ dsh plugin --profile web add C:/path/to/dsh-remove-session
 index.js                 Host 半边：HTTP 接口、删除编排、Workspace 清理
 host/session-files.js    会话目录定位、ID 转义、递归删除
 client.js                Client 半边：菜单行、确认弹窗、列表更新
+scripts/sync-icon.mjs    把 icon.svg 同步成 client.js 里的内嵌图标
 cordis.patch.yml         bundle 配置层
 locale/{zh,en}.json      Plugin Manager 元数据与文案
 icon.svg                 插件图标
