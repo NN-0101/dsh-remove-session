@@ -1,15 +1,16 @@
 {
   "name": "dsh-remove-session",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "private": false,
-  "description": "Adds a red “Delete session” action to every Session's “...” menu, with a confirmation dialog and a real on-disk delete. | 在会话「...」菜单末尾增加红色“删除会话”，二次确认后真正删除会话记录。",
+  "description": "Adds a red “Delete session” action to every Session's “...” menu, with a confirmation dialog and a real on-disk delete; on startup it also removes orphan projection-cache files that no longer have a Session directory. | 在会话「...」菜单末尾增加红色“删除会话”，二次确认后真正删除会话记录；并在插件启动时清掉没有对应会话目录的投影缓存孤儿文件。",
   "keywords": [
     "dsh",
     "dsh-plugin",
     "deepseek-harness",
     "cordis",
     "session",
-    "sidebar"
+    "sidebar",
+    "cleanup"
   ],
   "license": "MIT",
   "author": "0101",
