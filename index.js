@@ -86,7 +86,6 @@ export function apply(ctx) {
     }), 'dsh-remove-session: sweep route')
     // 启动清理放到微任务里跑：它在 apply 内注册，但绝不阻塞插件激活，也绝不让
     // 一次文件系统报错变成插件加载失败。
-<<<<<<< HEAD
     //
     // 会话根目录被 `DSH_REMOVE_SESSION_ROOT` 顶替时（测试、调试用的假根）不跑
     // 自动清理：那时缓存目录仍指向真实的 `$DSH_HOME`，拿假根去比对就会把真实
@@ -110,13 +109,6 @@ function usesSessionsRootOverride() {
     return typeof override === 'string' && override.trim() !== ''
 }
 
-=======
-    queueMicrotask(() => {
-        void runStartupSweep(ctx, root, cacheDir)
-    })
-}
-
->>>>>>> origin/main
 // #region 投影缓存孤儿清理
 
 /**
@@ -182,12 +174,9 @@ function liveSessionIds(ctx) {
  * 启动清理只在插件激活时跑一次；DSH 长期不重启时，用它把手工删除或异常退出
  * 留下的残留顺手清掉。不接受任何参数——扫描目标完全由磁盘布局决定。
  *
-<<<<<<< HEAD
  * 会话根目录被 `DSH_REMOVE_SESSION_ROOT` 顶替时直接拒绝：那时 `root` 是假根、
  * `cacheDir` 仍指向真实缓存，两边不是同一份数据，比对结果毫无意义且会误删。
  *
-=======
->>>>>>> origin/main
  * @param {import('@deepseek-ai/cordis').Context} ctx - Host 插件上下文。
  * @param {string} root - 会话根目录。
  * @param {string} cacheDir - 投影缓存表目录。
@@ -204,7 +193,6 @@ async function handleSweep(ctx, root, cacheDir, request, response) {
         sendJson(response, 403, {ok: false, error: {code: 'forbidden', message: 'cross-origin request refused'}})
         return
     }
-<<<<<<< HEAD
     if (usesSessionsRootOverride()) {
         // 假根 + 真缓存 = 会误删。此时不是“少删一点”，而是两边根本不是同一份数据。
         sendJson(response, 409, {
@@ -216,8 +204,6 @@ async function handleSweep(ctx, root, cacheDir, request, response) {
         })
         return
     }
-=======
->>>>>>> origin/main
     try {
         const result = await sweepProjectionCache({root, cacheDir, keep: liveSessionIds(ctx)})
         lastSweep = {state: 'done', ...result}

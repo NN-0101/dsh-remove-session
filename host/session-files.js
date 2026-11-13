@@ -177,28 +177,18 @@ export async function listStoredSessionIds(root) {
  * 判定完全基于磁盘事实，并且故意保守：
  *
  * - 会话 id 从文件名反推（去掉 `.json`），与后端 `per-record` 的键一致；
-<<<<<<< HEAD
  * - 这个目录就是 `session_projcache` 域的 `sessions` 表，所以凡是通过后端
  *   `per-record` 键校验（路径安全）的 `<key>.json` 都算候选；`global.json`、
  *   `.bak.*` 备份、`.deleting` 暂存名不动；
  * - 任何扫描错误都让本次清理整体跳过，而不是“看不见就当孤儿删掉”；
  * - 会话根读得到但**一个会话目录都没有**时同样跳过：布局搬家、根目录改名、
  *   `DSH_HOME` 指错都长这样，而它的后果是把整份缓存当孤儿清空。
-=======
- * - 只把**形状像会话 id** 的文件当作候选（`session-…`，或至少包含一个连字符
- *   的普通键），其余文件（`global.json`、备份、未知版本残留）一律不动；
- * - 任何扫描错误都让本次清理整体跳过，而不是“看不见就当孤儿删掉”。
->>>>>>> origin/main
  *
  * @param {object} options - 扫描参数。
  * @param {string} options.root - 会话根目录。
  * @param {string} options.cacheDir - 投影缓存表目录。
  * @param {Set<string>} [options.keep] - 额外要保留的会话 id（例如内存里 live 的会话）。
-<<<<<<< HEAD
  * @returns {Promise<{cacheDir: string, scanned: number, orphans: string[], skipped?: string}>} 扫描结果；`skipped` 说明本次为何一只未删。
-=======
- * @returns {Promise<{cacheDir: string, scanned: number, orphans: string[]}>} 扫描结果。
->>>>>>> origin/main
  * @throws {Error} 会话根目录读不到时抛出，调用方据此跳过整次清理。
  */
 export async function findOrphanProjectionCacheFiles({root, cacheDir, keep}) {
@@ -212,7 +202,6 @@ export async function findOrphanProjectionCacheFiles({root, cacheDir, keep}) {
   // 先拿到磁盘上的会话集合；这一步读不到会话根就抛错，调用方据此跳过清理。
   const stored = await listStoredSessionIds(root)
   const retained = keep instanceof Set ? keep : new Set(Array.isArray(keep) ? keep : [])
-<<<<<<< HEAD
   const candidates = []
   for (const entry of entries) {
     if (!entry.isFile()) continue
@@ -237,33 +226,16 @@ export async function findOrphanProjectionCacheFiles({root, cacheDir, keep}) {
   }
   orphans.sort()
   return {cacheDir, scanned: candidates.length, orphans}
-=======
-  const orphans = []
-  let scanned = 0
-  for (const entry of entries) {
-    if (!entry.isFile()) continue
-    const key = projectionCacheKey(entry.name)
-    if (key === undefined) continue
-    scanned += 1
-    if (stored.has(key) || retained.has(key)) continue
-    orphans.push(join(cacheDir, entry.name))
-  }
-  orphans.sort()
-  return {cacheDir, scanned, orphans}
->>>>>>> origin/main
 }
 
 /**
  * 从投影缓存的文档文件名反推会话 id。
  *
-<<<<<<< HEAD
  * 这个目录**就是** `session_projcache` 域的 `sessions` 表，所以凡是通过后端
  * `per-record` 键校验（路径安全）的 `<key>.json`，其键必然是一个 Session.id。
  * 保留的例外只有：`global.json`（域全局槽），以及不以 `.json` 结尾的文件
  * （`.deleting` 暂存名、`<key>.json.bak.<时间戳>` 备份）——它们根本走不到这里。
  *
-=======
->>>>>>> origin/main
  * @param {string} name - 文件名（含 `.json`）。
  * @returns {string | undefined} 会话 id；不是候选文档时返回 `undefined`。
  */
@@ -273,10 +245,6 @@ export function projectionCacheKey(name) {
   if (key === '' || key === 'global') return undefined
   // 后端要求 per-record 键是路径安全的 `[a-zA-Z0-9_-]+`；不符合的原样跳过。
   if (!/^[a-zA-Z0-9_-]+$/.test(key)) return undefined
-<<<<<<< HEAD
-=======
-  if (!key.includes('-')) return undefined
->>>>>>> origin/main
   return key
 }
 
@@ -309,7 +277,6 @@ export async function removeProjectionCacheFiles(files) {
  * @param {string} options.root - 会话根目录。
  * @param {string} options.cacheDir - 投影缓存表目录。
  * @param {Set<string>} [options.keep] - 额外要保留的会话 id。
-<<<<<<< HEAD
  * @returns {Promise<{cacheDir: string, scanned: number, orphans: string[], removed: string[], failed: Array<{path: string, error: string}>, skipped?: string}>} 清理结果；`skipped` 表示扫描阶段已决定不动手。
  */
 export async function sweepProjectionCache({root, cacheDir, keep}) {
@@ -318,14 +285,6 @@ export async function sweepProjectionCache({root, cacheDir, keep}) {
   return skipped === undefined
     ? {cacheDir, scanned, orphans, removed, failed}
     : {cacheDir, scanned, orphans, removed, failed, skipped}
-=======
- * @returns {Promise<{cacheDir: string, scanned: number, orphans: string[], removed: string[], failed: Array<{path: string, error: string}>}>} 清理结果。
- */
-export async function sweepProjectionCache({root, cacheDir, keep}) {
-  const {scanned, orphans} = await findOrphanProjectionCacheFiles({root, cacheDir, keep})
-  const {removed, failed} = await removeProjectionCacheFiles(orphans)
-  return {cacheDir, scanned, orphans, removed, failed}
->>>>>>> origin/main
 }
 
 // #endregion
