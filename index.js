@@ -21,7 +21,14 @@
  */
 
 import {readFileSync} from 'node:fs'
-import {findSessionDirectories, removeSessionDirectory, resolveSessionsRoot} from './host/session-files.js'
+import {
+    findSessionDirectories,
+    removeSessionDirectory,
+    resolveDshHome,
+    resolveProjectionCacheDir,
+    resolveSessionsRoot,
+    sweepProjectionCache,
+} from './host/session-files.js'
 
 /** 本 bundle 独占的 HTTP 路由前缀。 */
 const ROUTE_PREFIX = '/plugin/dsh-remove-session'
@@ -31,6 +38,13 @@ const VERSION = readVersion()
 
 /** 本插件激活所必需的 Host 服务。 */
 export const inject = ['webServer']
+
+/**
+ * 最近一次启动清理的结果，供诊断接口读取。
+ *
+ * @type {{state: 'pending' | 'done' | 'failed' | 'skipped', cacheDir?: string, scanned?: number, orphans?: string[], removed?: string[], failed?: Array<{path: string, error: string}>, error?: string} | undefined}
+ */
+let lastSweep
 
 /**
  * 读取本包 package.json 里的版本号。
@@ -47,13 +61,14 @@ function readVersion() {
 }
 
 /**
- * 安装删除相关的 HTTP 接口。
+ * 安装删除相关的 HTTP 接口，并在启动时清理投影缓存的孤儿文档。
  *
  * @param {import('@deepseek-ai/cordis').Context} ctx - Host 插件上下文。
  * @returns {void}
  */
 export function apply(ctx) {
     const root = resolveSessionsRoot()
+    const cacheDir = resolveProjectionCacheDir(resolveDshHome())
     ctx.effect(() => ctx.webServer.register({
         kind: 'exact',
         path: `${ROUTE_PREFIX}/delete`,
@@ -64,7 +79,157 @@ export function apply(ctx) {
         path: `${ROUTE_PREFIX}/inspect`,
         handler: (request, response) => handleInspect(ctx, root, request, response),
     }), 'dsh-remove-session: inspect route')
+    ctx.effect(() => ctx.webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/sweep`,
+        handler: (request, response) => handleSweep(ctx, root, cacheDir, request, response),
+    }), 'dsh-remove-session: sweep route')
+    // 启动清理放到微任务里跑：它在 apply 内注册，但绝不阻塞插件激活，也绝不让
+    // 一次文件系统报错变成插件加载失败。
+<<<<<<< HEAD
+    //
+    // 会话根目录被 `DSH_REMOVE_SESSION_ROOT` 顶替时（测试、调试用的假根）不跑
+    // 自动清理：那时缓存目录仍指向真实的 `$DSH_HOME`，拿假根去比对就会把真实
+    // 缓存全判成孤儿。手动 sweep 接口仍可用，它也只在同一份 root 上工作。
+    if (!usesSessionsRootOverride()) {
+        queueMicrotask(() => {
+            void runStartupSweep(ctx, root, cacheDir)
+        })
+    } else {
+        lastSweep = {state: 'skipped', cacheDir, reason: 'DSH_REMOVE_SESSION_ROOT is set'}
+    }
 }
+
+/**
+ * 会话根目录是否被环境变量顶替。
+ *
+ * @returns {boolean} 有非空 `DSH_REMOVE_SESSION_ROOT` 时为 `true`。
+ */
+function usesSessionsRootOverride() {
+    const override = process.env.DSH_REMOVE_SESSION_ROOT
+    return typeof override === 'string' && override.trim() !== ''
+}
+
+=======
+    queueMicrotask(() => {
+        void runStartupSweep(ctx, root, cacheDir)
+    })
+}
+
+>>>>>>> origin/main
+// #region 投影缓存孤儿清理
+
+/**
+ * 启动时扫一遍投影缓存，删掉没有对应会话目录的孤儿文档。
+ *
+ * 这是“删会话”的收尾动作被自动化：删掉一个会话后，它的检查点文档留在
+ * `storages/session_projcache/sessions` 里，虽然按会话 id 读取、不会再被展示，
+ * 但会一直堆着。这里在每次插件激活时清理一次。
+ *
+ * 安全约束：
+ * - 只处理“磁盘上没有会话目录、内存里也不 live”的会话 id；
+ * - 扫描会话根目录失败时整体跳过，绝不把“读不到”当成“不存在”去删；
+ * - 单个文件删除失败只记日志，不影响其余文件，也不影响插件激活。
+ *
+ * @param {import('@deepseek-ai/cordis').Context} ctx - Host 插件上下文。
+ * @param {string} root - 会话根目录。
+ * @param {string} cacheDir - 投影缓存表目录。
+ * @returns {Promise<void>} 清理结束（成功或优雅失败）后 resolve。
+ */
+async function runStartupSweep(ctx, root, cacheDir) {
+    lastSweep = {state: 'pending', cacheDir}
+    try {
+        const result = await sweepProjectionCache({root, cacheDir, keep: liveSessionIds(ctx)})
+        lastSweep = {state: 'done', ...result}
+        if (result.removed.length > 0) {
+            ctx.logger?.info?.(
+                `dsh-remove-session: removed ${String(result.removed.length)} orphan projection-cache file(s) from ${cacheDir}`,
+            )
+        }
+    } catch (error) {
+        lastSweep = {state: 'failed', cacheDir, error: messageOf(error)}
+        ctx.logger?.warn?.(`dsh-remove-session: skipping projection-cache sweep: ${messageOf(error)}`)
+    }
+}
+
+/**
+ * 当前仍然 live 的会话 id。
+ *
+ * 极少数时候会话还没有落盘（新建但从未写入），此时目录不存在而缓存文档可能
+ * 已经先写了；把这些 id 一并保留，避免误删正在使用中的会话的检查点。
+ *
+ * @param {import('@deepseek-ai/cordis').Context} ctx - Host 插件上下文。
+ * @returns {Set<string>} live 会话 id 集合。
+ */
+function liveSessionIds(ctx) {
+    const ids = new Set()
+    try {
+        for (const session of ctx.get('sessions')?.list?.() ?? []) ids.add(String(session.id))
+    } catch (error) {
+        ctx.logger?.warn?.(`dsh-remove-session: listing live sessions failed: ${messageOf(error)}`)
+    }
+    try {
+        for (const agent of ctx.get('agents')?.list?.() ?? []) ids.add(String(agent.id))
+    } catch (error) {
+        ctx.logger?.warn?.(`dsh-remove-session: listing live agents failed: ${messageOf(error)}`)
+    }
+    return ids
+}
+
+/**
+ * 处理 `POST /plugin/dsh-remove-session/sweep`：手动再跑一次孤儿清理。
+ *
+ * 启动清理只在插件激活时跑一次；DSH 长期不重启时，用它把手工删除或异常退出
+ * 留下的残留顺手清掉。不接受任何参数——扫描目标完全由磁盘布局决定。
+ *
+<<<<<<< HEAD
+ * 会话根目录被 `DSH_REMOVE_SESSION_ROOT` 顶替时直接拒绝：那时 `root` 是假根、
+ * `cacheDir` 仍指向真实缓存，两边不是同一份数据，比对结果毫无意义且会误删。
+ *
+=======
+>>>>>>> origin/main
+ * @param {import('@deepseek-ai/cordis').Context} ctx - Host 插件上下文。
+ * @param {string} root - 会话根目录。
+ * @param {string} cacheDir - 投影缓存表目录。
+ * @param {import('node:http').IncomingMessage} request - 收到的请求。
+ * @param {import('node:http').ServerResponse} response - 由本函数负责完成的响应。
+ * @returns {Promise<void>} 响应写完后 resolve。
+ */
+async function handleSweep(ctx, root, cacheDir, request, response) {
+    if (request.method !== 'POST') {
+        sendJson(response, 405, {ok: false, error: {code: 'method-not-allowed', message: 'POST required'}})
+        return
+    }
+    if (!sameOrigin(request)) {
+        sendJson(response, 403, {ok: false, error: {code: 'forbidden', message: 'cross-origin request refused'}})
+        return
+    }
+<<<<<<< HEAD
+    if (usesSessionsRootOverride()) {
+        // 假根 + 真缓存 = 会误删。此时不是“少删一点”，而是两边根本不是同一份数据。
+        sendJson(response, 409, {
+            ok: false,
+            error: {
+                code: 'sessions-root-overridden',
+                detail: 'DSH_REMOVE_SESSION_ROOT replaces the sessions root but not the cache directory; refusing to compare them',
+            },
+        })
+        return
+    }
+=======
+>>>>>>> origin/main
+    try {
+        const result = await sweepProjectionCache({root, cacheDir, keep: liveSessionIds(ctx)})
+        lastSweep = {state: 'done', ...result}
+        sendJson(response, 200, {ok: true, ...result})
+    } catch (error) {
+        const detail = messageOf(error)
+        lastSweep = {state: 'failed', cacheDir, error: detail}
+        sendJson(response, 200, {ok: false, error: {code: 'sweep-failed', detail}})
+    }
+}
+
+// #endregion
 
 // #region HTTP 接口
 
@@ -213,6 +378,8 @@ async function handleInspect(ctx, root, request, response) {
         root,
         liveSessionIds,
         agentIds,
+        // 启动清理结果：state 为 done 时 lastSweep 就包含扫到的文档数与删掉的路径。
+        orphanSweep: lastSweep ?? {state: 'skipped', reason: 'not started'},
     }
     if (sessionId !== undefined && sessionId !== '') {
         let directories = []

@@ -93,6 +93,7 @@ dsh plugin --profile web add github:NN-0101/dsh-remove-session
 - **安全拒绝**：正在运行的回合、进行中的子智能体/后台任务/定时提醒，都会被拒绝并给出提示。
 - **中英双语**：`locale/zh.json`、`locale/en.json` 以及客户端内嵌字典。
 - **图标可替换**：插件卡片使用 `icon.svg`；菜单行的删除图标取自同一份图标（以 data URL 内嵌在 `client.js`，按行内文字颜色着色），替换后运行 `npm run sync-icon` 即可同步。
+- **启动时清理投影缓存孤儿**：插件每次激活都会扫一遍 `$DSH_HOME/storages/session_projcache/sessions`，删掉“磁盘上已经没有对应会话目录”的检查点文档，避免删过的会话把派生缓存永远留在盘上。
 
 ---
 
@@ -100,10 +101,10 @@ dsh plugin --profile web add github:NN-0101/dsh-remove-session
 
 | 项目 | 说明 |
 | --- | --- |
-| 读取/写入范围 | `$DSH_HOME/sessions` 下该会话自己的目录；Workspace registry 中该会话的归属、置顶、归档记录 |
-| 网络 | 不访问任何外部服务；只注册两个同源本地 HTTP 接口 |
+| 读取/写入范围 | `$DSH_HOME/sessions` 下该会话自己的目录；`$DSH_HOME/storages/session_projcache/sessions` 中已无会话目录的孤儿文档；Workspace registry 中该会话的归属、置顶、归档记录 |
+| 网络 | 不访问任何外部服务；只注册三个同源本地 HTTP 接口 |
 | 遥测 | 无 |
-| 删除范围 | 仅该会话目录；**不会**删除附件、其他会话、Workspace 目录本身 |
+| 删除范围 | 仅该会话目录与孤儿缓存文档；**不会**删除附件、其他会话、Workspace 目录本身 |
 | 请求校验 | `Origin` 与 `Host` 对比的同源校验；删除只接受 `POST` + JSON |
 | 运行中保护 | Agent 回合仍在运行、或 `workspace/session-activity` 报告有工作时，返回错误且不写盘 |
 | 不可恢复 | 删除是永久的，没有回收站；需要保留请使用“归档会话” |
@@ -128,7 +129,7 @@ dsh plugin --profile web add github:NN-0101/dsh-remove-session
 
 | 半边 | 职责 |
 | --- | --- |
-| Host（`index.js`、`host/session-files.js`） | 注册同源接口 `POST /plugin/dsh-remove-session/delete`；校验会话状态与进行中的工作；flush 待写事件；**先把会话从 Host 内存 store 里摘掉**（触发 `session/disposed`，让持久化关闭写句柄、投影缓存落盘）；再删除 JSONL 会话目录；从 Workspace registry 摘除归属/置顶/归档；发出 `api-session/removed` |
+| Host（`index.js`、`host/session-files.js`） | 注册同源接口 `POST /plugin/dsh-remove-session/delete`；校验会话状态与进行中的工作；flush 待写事件；**先把会话从 Host 内存 store 里摘掉**（触发 `session/disposed`，让持久化关闭写句柄、投影缓存落盘）；再删除 JSONL 会话目录；从 Workspace registry 摘除归属/置顶/归档；发出 `api-session/removed`。插件激活时还会跑一次投影缓存孤儿清理，并注册 `POST /plugin/dsh-remove-session/sweep` 供手动触发 |
 | Client（`client.js`） | 在 `sidebar.workspaces.session.menu.item` 注册红色菜单行，在 `shell.overlay` 注册确认弹窗；确认后调用 Host 接口，成功后移除列表行并按需清空主视图 |
 
 删除动作必须由 Host 完成：DSH 的 JSONL 持久化后端没有删除 API，会话日志以目录形式存放在 `$DSH_HOME/sessions` 下，因此插件直接删除该会话独占的目录，不触碰共享存储。
@@ -168,6 +169,36 @@ GET /plugin/dsh-remove-session/inspect?sessionId=<会话ID>
 
 返回该会话是否 live、磁盘目录、是否置顶/归档、归属的 Workspace，以及 `orphaned` —— 该会话是“内存里 live、磁盘上无目录、Workspace 里无归属”的幽灵状态（0.1.2 只删目录的遗留物，0.1.3 起再次删除即可清掉）。用于排查“为什么删不掉”。
 
+响应里还有 `orphanSweep`：最近一次启动清理的结果（`state` 为 `pending` / `done` / `failed` / `skipped`，`done` 时带 `scanned`、`orphans`、`removed`、`failed`）。
+
+手动再跑一次清理（插件长期不重启时用）：
+
+```http
+POST /plugin/dsh-remove-session/sweep
+```
+
+---
+
+## 投影缓存孤儿清理
+
+删除会话时，它的 JSONL 日志目录被移除，但 DSH 的投影缓存（`session_projcache` 域）里还留着一份按会话 id 命名的检查点文档：
+
+```
+$DSH_HOME/storages/session_projcache/sessions/
+  session-<会话ID>.json     # 派生缓存；会话目录没了它就是残留
+```
+
+这份文档是纯派生数据（fold shortcut），删掉不会丢任何聊天记录，只会让下次冷读多回放一段日志。0.1.4 及更早版本把它记在“已知限制”里，0.2.0 起自动清理：
+
+- **触发时机**：插件每次激活时跑一次（启动 / 手动安装 / 重新启用都算），不阻塞激活，失败只记日志。
+- **判定标准**：文件名反推的会话 id 在 `$DSH_HOME/sessions/<项目>/<会话ID>` 下**没有任何目录**，并且该 id 当前也不在内存的 live 会话列表里。
+- **安全边界**：
+  - 会话根目录**读不到**时整体跳过 —— “读不到”不等于“没有会话”，绝不因此把整份缓存清空；
+  - 会话根读得到但**一个会话目录都没有**时同样跳过 —— 布局搬家、根目录改名、`DSH_HOME` 指错都长这样；
+  - 只删单个 `<会话ID>.json` 文件，不删目录、不递归；
+  - `global.json`、`.bak.*` 备份、不符合 `per-key` 形状的文件一律不动；
+  - 单个文件删除失败只记日志，不影响其余文件，也不影响插件加载。
+
 ---
 
 ## 验证
@@ -177,9 +208,17 @@ Host 接口的真实输出（路径与 ID 已脱敏）：
 ```json
 {
   "ok": true,
-  "version": "0.1.4",
+  "version": "0.2.0",
   "root": "C:\\Users\\<user>\\.dsh\\sessions",
   "liveSessionIds": ["session-<id>"],
+  "orphanSweep": {
+    "state": "done",
+    "cacheDir": "C:\\Users\\<user>\\.dsh\\storages\\session_projcache\\sessions",
+    "scanned": 3,
+    "orphans": ["C:\\Users\\<user>\\.dsh\\storages\\session_projcache\\sessions\\session-<orphan>.json"],
+    "removed": ["C:\\Users\\<user>\\.dsh\\storages\\session_projcache\\sessions\\session-<orphan>.json"],
+    "failed": []
+  },
   "session": {
     "id": "session-<id>",
     "live": true,
@@ -197,14 +236,21 @@ Host 接口的真实输出（路径与 ID 已脱敏）：
 - 不存在的会话 → `{ "ok": true }`（幂等，便于重试）；
 - 正在运行的会话 → `{ "ok": false, "error": { "code": "session-running" } }`，且会话目录保持完好；
 - 跨源请求 → `403`；非 `POST` → `405`；
-- 临时目录单测：只删除目标会话目录，兄弟会话目录保留。
+- 临时目录单测：只删除目标会话目录，兄弟会话目录保留；
+- 孤儿清理（在真实 profile 上）：往缓存目录放一个假 `session-….json` 后重新启用插件，激活时的清理把它删掉（`scanned` 计数包含了它，`removed` 里就是它），同目录下真实会话的缓存文档全部保留；
+- 手动 sweep 端点（真实 profile）：`POST` 后返回同样的 `scanned` / `orphans` / `removed` 结构。
+- 单元测试 16 项：孤儿判定、live 会话保留、读不到会话根时跳过、会话根为空时跳过、`global.json` / `.bak.*` / 非路径安全名不动、无连字符 id 也能判定。
+
+会话根被 `DSH_REMOVE_SESSION_ROOT` 顶替（测试/调试用的假根）时，启动清理会跳过，手动 sweep 返回 `409 sessions-root-overridden` —— 那时缓存目录仍指向真实 `$DSH_HOME`，两边不是同一份数据。
 
 ---
 
 ## 已知限制
 
 - **不级联删除子会话**：subagent 会话仍保留在磁盘上（它们默认不出现在侧栏）。
-- **投影缓存可能残留**：`$DSH_HOME/storages` 中该会话的检查点文档不会被清理；它按会话 id 读取，删除后不会被展示，也不会让会话“复活”。
+- **投影缓存孤儿只在插件激活时清**：每次激活（启动、安装、重新启用）跑一次；DSH 一直不重启时，可用 `POST /plugin/dsh-remove-session/sweep` 手动再跑一次。
+- **会话根被顶替时清理不工作**：`DSH_REMOVE_SESSION_ROOT` 设置时，启动清理跳过、手动 sweep 返回 409；这是有意的，避免拿假根去比对真实缓存。
+- **只清理缓存、不复活会话**：孤儿清理不会删掉任何会话目录，也不会让已删除的会话重新出现。
 - **替换图标需要同步**：`icon.svg` 是插件卡片图标；菜单行使用由它生成的 `client.js` 内嵌副本，修改图标后需运行 `npm run sync-icon`，否则菜单行仍是旧图标。
 - **删除不可恢复**：没有回收站。
 
@@ -235,10 +281,11 @@ dsh plugin --profile web add C:/path/to/dsh-remove-session
 目录：
 
 ```text
-index.js                 Host 半边：HTTP 接口、删除编排、Workspace 清理
-host/session-files.js    会话目录定位、ID 转义、递归删除
+index.js                 Host 半边：HTTP 接口、删除编排、Workspace 清理、启动时的缓存孤儿清理
+host/session-files.js    会话目录定位、ID 转义、递归删除、投影缓存孤儿判定与清理
 client.js                Client 半边：菜单行、确认弹窗、列表更新
 test/delete-flow.test.mjs 删除流程测试（顺序、幽灵会话、运行中拒绝、幂等、只删自己）
+test/projection-cache-sweep.test.mjs 投影缓存孤儿清理测试（判定、live 保留、读不到根目录时跳过）
 scripts/sync-icon.mjs    把 icon.svg 同步成 client.js 里的内嵌图标
 cordis.patch.yml         bundle 配置层
 locale/{zh,en}.json      Plugin Manager 元数据与文案
@@ -284,5 +331,7 @@ dsh plugin --profile web add github:NN-0101/dsh-remove-session
 Replace `web` with your profile name (for example `desktop`), then refresh the page. The npm package is also listed in the in-app Plugin Center, so it can be installed in one click from there.
 
 **Safety:** running sessions and sessions with active subagents/jobs/reminders are refused. The session is detached from the Host's live store first — the list is the union of stored and live Sessions, so removing only the directory would leave it live with no Workspace membership — and only then is its directory removed. A refused deletion performs no navigation and creates no Session; a successful one clears the main view instead of opening a new Session. Attachments and other sessions are untouched. Deletion is permanent — use Archive if you may need the conversation later.
+
+**Cache cleanup:** on every activation (startup, install, re-enable) the plugin sweeps `$DSH_HOME/storages/session_projcache/sessions` and deletes each checkpoint document whose session id has no directory left under `$DSH_HOME/sessions` and is not live in memory. The cache is derived data, so nothing conversational is lost. It only ever deletes single `<id>.json` documents (never directories, backups, or `global.json`); it skips the whole sweep when the sessions root cannot be read **or** holds no session directory at all (a moved layout must not look like "every session vanished"); and it refuses to run — and returns `409` — when `DSH_REMOVE_SESSION_ROOT` overrides the sessions root, because the cache directory would still point at the real `$DSH_HOME`. `POST /plugin/dsh-remove-session/sweep` re-runs it on demand.
 
 Requires DSH 0.2.x (tested on 0.2.1-rc.2) with the Web UI; Node `^22.15.0 || >=24.0.0`. MIT licensed.
